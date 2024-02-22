@@ -1,0 +1,51 @@
+{
+  "name": "gtc-js",
+  "version": "0.0.1",
+  "description": "Unofficial GetContact API",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "format": "prettier --write .",
+    "prebuild": "rimraf dist",
+    "build": "tsc",
+    "prepublish": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sooluh/gtc-js.git"
+  },
+  "keywords": [
+    "getcontact",
+    "getcontact-api"
+  ],
+  "author": {
+    "name": "Abu Masyail",
+    "url": "https://suluh.my.id",
+    "email": "suluhs@aol.com"
+  },
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/sooluh/gtc-js/issues"
+  },
+  "homepage": "https://github.com/sooluh/gtc-js#readme",
+  "prettier": {
+    "trailingComma": "es5",
+    "semi": false,
+    "singleQuote": true,
+    "useTabs": false,
+    "quoteProps": "consistent",
+    "bracketSpacing": true,
+    "arrowParens": "always",
+    "printWidth": 100
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.19",
+    "prettier": "^3.2.5",
+    "rimraf": "^5.0.5",
+    "tsc": "^2.0.4",
+    "typescript": "^5.3.3"
+  }
+}
