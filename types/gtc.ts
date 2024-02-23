@@ -1,6 +1,18 @@
 export type GtcOptions = {
   cookiePath?: string
   showQr?: boolean
+  puppeteer?: {
+    env?: Record<string, string | undefined>
+    executablePath?: string
+    timeout?: number
+    waitForInitialPage?: boolean
+    args?: string[]
+    debuggingPort?: number
+    devtools?: boolean
+    headless?: boolean | 'shell'
+    userDataDir?: string
+    ignoreDefaultArgs?: string[]
+  }
 }
 
 export type CountryCode =

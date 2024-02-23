@@ -1,41 +1,46 @@
 import Jimp from 'jimp'
+import fs from 'fs/promises'
 import EventEmitter from 'events'
 // @ts-ignore
 import qrReader from 'qrcode-reader'
 import qrPrint from 'qrcode-terminal'
+import puppeteer from 'puppeteer-extra'
 import { CookieJar } from 'tough-cookie'
 import axios, { AxiosInstance } from 'axios'
+import { CookieParam, Page } from 'puppeteer'
 import randomUseragent from 'random-useragent'
 import { wrapper } from 'axios-cookiejar-support'
 import { CountryCode, GtcOptions } from '../types/gtc'
 import { FileCookieStore } from 'tough-cookie-file-store'
+import StealthPlugin from 'puppeteer-extra-plugin-stealth'
 
 class Gtc extends EventEmitter {
   #base_url = 'https://web.getcontact.com'
   #options: GtcOptions
   #hash?: string | null
-  #client: AxiosInstance
+  #jar: CookieJar
+  #http: AxiosInstance
   #qr: typeof qrReader
   #isLogged: boolean = false
 
   constructor(options: GtcOptions) {
     super()
 
-    const store = options.cookiePath ? new FileCookieStore(options.cookiePath) : undefined
-    const jar = new CookieJar(store)
-
+    this.#qr = new qrReader()
     this.#options = options
-    this.#client = wrapper(
+    this.#options.cookiePath = this.#options?.cookiePath || '/tmp/cookies.json'
+    this.#jar = new CookieJar(new FileCookieStore(this.#options.cookiePath))
+
+    this.#http = wrapper(
       axios.create({
-        jar,
-        headers: { 'User-Agent': randomUseragent.getRandom((ua) => ua.browserName === 'Safari') },
+        jar: this.#jar,
+        headers: { 'User-Agent': randomUseragent.getRandom((ua) => ua.browserName === 'Chrome') },
       })
     )
-    this.#qr = new qrReader()
   }
 
   async #getHash() {
-    const result = await this.#client.get(this.#base_url).then((res) => res.data)
+    const result = await this.#http.get(this.#base_url).then((res) => res.data)
     const before = result.match(/hash: '([a-fA-F0-9]+)'/)
     const after = result.match(/<input type="hidden" name="hash" value="([^"]+)"\/>/)
 
@@ -57,7 +62,7 @@ class Gtc extends EventEmitter {
       return
     }
 
-    const buffer = await this.#client.get(`${this.#base_url}/get-qr-code`, {
+    const buffer = await this.#http.get(`${this.#base_url}/get-qr-code`, {
       responseType: 'arraybuffer',
     })
 
@@ -90,7 +95,7 @@ class Gtc extends EventEmitter {
     const data = new URLSearchParams()
     data.append('hash', this.#hash || '')
 
-    const response = await this.#client.post(`${this.#base_url}/check-qr-code`, data, {
+    const response = await this.#http.post(`${this.#base_url}/check-qr-code`, data, {
       headers: {
         'X-Requested-With': 'XMLHttpRequest',
         'Origin': this.#base_url,
@@ -126,29 +131,93 @@ class Gtc extends EventEmitter {
     await Promise.all([this.#getQr(), this.#checkLogged()])
   }
 
-  async find(countryCode: CountryCode, phoneNumber: number | string): Promise<string[]> {
-    // TODO: use Puppeteer - POST to /search then /list-tag
-    this.#hash = await this.#getHash()
+  async #loadCookie(page: Page) {
+    const string = await fs.readFile(this.#options.cookiePath!, { encoding: 'utf8' })
 
-    const data = new URLSearchParams()
-    data.append('hash', this.#hash || '')
-    data.append('phoneNumber', encodeURI(`+${phoneNumber}`))
-    data.append('countryCode', countryCode)
+    const cookies: CookieParam[] = Object.values(JSON.parse(string)).flatMap((domain: any) =>
+      Object.values(domain).flatMap((path: any) =>
+        Object.values(path).map((cookie: any) => ({
+          name: cookie.key,
+          value: cookie.value,
+          domain: cookie.domain,
+          path: cookie.path,
+          expires: cookie.expires ? Date.parse(cookie.expires) / 1000 : undefined,
+          size: JSON.stringify(cookie).length,
+          httpOnly: cookie.httpOnly || false,
+          secure: cookie.secure || false,
+          session: cookie.expires === undefined,
+          priority: 'Medium',
+          sameParty: false,
+          sourceScheme: 'Secure',
+        }))
+      )
+    )
 
-    const response = await this.#client.post(`${this.#base_url}/list-tag`, data, {
-      headers: {
-        'X-Requested-With': 'XMLHttpRequest',
-        'Origin': this.#base_url,
-        'Referer': this.#base_url + '/search',
-        'Te': 'trailers',
+    await page.setCookie(...cookies)
+  }
+
+  async find(countryCode: CountryCode, phoneNumber: number | string): Promise<any> {
+    await this.#checkLogged()
+
+    const browser = await puppeteer.use(StealthPlugin()).launch(this.#options.puppeteer)
+    const page = await browser.newPage()
+
+    await this.#loadCookie(page)
+    await page.goto(`${this.#base_url}`)
+    await page.waitForSelector('[name="phoneNumber"]')
+
+    await page.evaluate(
+      (countryCode, phoneNumber) => {
+        ;(<HTMLInputElement>document.querySelector('[name="countryCode"]')).value = countryCode
+        ;(<HTMLInputElement>document.querySelector('[name="phoneNumber"]')).value =
+          String(phoneNumber)
+        ;(<HTMLElement>document.querySelector('#submitButton')).click()
       },
-    })
+      countryCode,
+      phoneNumber
+    )
 
-    if (!response.data || response.data.status !== 'success') {
-      return []
+    try {
+      await page.waitForSelector('.box.r-profile-box', { timeout: 0 })
+
+      const profile = await page.evaluate(() => {
+        const name = (document.querySelector('.rpbi-info h1')?.innerHTML || '').trim()
+        const provider =
+          (document.querySelector('.rpbi-info em')?.innerHTML?.split('-')?.[0] || '').trim() || null
+        const img = /url\('([^']+)'\)/.exec(document.querySelector('.rpbi-img')?.innerHTML || '')
+        const picture = img ? img[1] : null
+        const expand = <HTMLElement>document.querySelector('.r-tag-box .rbi-link')
+
+        return { name, provider, picture, tags: expand }
+      })
+
+      await browser.close()
+
+      const data = new URLSearchParams()
+      data.append('hash', this.#hash || '')
+      data.append('phoneNumber', encodeURI(`+${phoneNumber}`))
+      data.append('countryCode', countryCode)
+
+      const response = await this.#http.post(`${this.#base_url}/list-tag`, data, {
+        headers: {
+          'X-Requested-With': 'XMLHttpRequest',
+          'Origin': this.#base_url,
+          'Referer': this.#base_url + '/search',
+          'Te': 'trailers',
+        },
+      })
+
+      if (!response.data || response.data.status !== 'success') {
+        return profile
+      }
+
+      return { ...profile, tags: response.data.tags.map(({ tag }: { tag: string }) => tag) }
+    } catch (error) {
+      console.error(error)
+      await browser.close()
+
+      return null
     }
-
-    return response.data.tags.map(({ tag }: { tag: string }) => tag)
   }
 }
 
