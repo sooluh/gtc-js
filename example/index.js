@@ -31,7 +31,7 @@ const main = async () => {
 
   await gtc.init()
 
-  const tags = await gtc.find('ID', '6283861415641') // just random phone number
+  const tags = await gtc.find('ID', '6285174220604') // just random phone number
   console.log(tags)
 }
 

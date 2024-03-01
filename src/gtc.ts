@@ -203,6 +203,10 @@ class Gtc extends EventEmitter {
 
       await browser.close()
 
+      if (!profile.provider && !profile.country) {
+        return null
+      }
+
       const data = new URLSearchParams()
       data.append('hash', this.#hash || '')
       data.append('phoneNumber', encodeURI(`+${phoneNumber}`))
