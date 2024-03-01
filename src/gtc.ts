@@ -1,8 +1,8 @@
+import os from 'os'
+import jsQr from 'jsqr'
 import Jimp from 'jimp'
 import fs from 'fs/promises'
 import EventEmitter from 'events'
-// @ts-ignore
-import qrReader from 'qrcode-reader'
 import qrPrint from 'qrcode-terminal'
 import puppeteer from 'puppeteer-extra'
 import { CookieJar } from 'tough-cookie'
@@ -10,9 +10,9 @@ import axios, { AxiosInstance } from 'axios'
 import { CookieParam, Page } from 'puppeteer'
 import randomUseragent from 'random-useragent'
 import { wrapper } from 'axios-cookiejar-support'
-import { CountryCode, GtcOptions } from '../types/gtc'
 import { FileCookieStore } from 'tough-cookie-file-store'
 import StealthPlugin from 'puppeteer-extra-plugin-stealth'
+import { CountryCode, GtcOptions, GtcResult } from '../types/gtc'
 
 class Gtc extends EventEmitter {
   #base_url = 'https://web.getcontact.com'
@@ -20,15 +20,14 @@ class Gtc extends EventEmitter {
   #hash?: string | null
   #jar: CookieJar
   #http: AxiosInstance
-  #qr: typeof qrReader
+  #qr?: string | null
   #isLogged: boolean = false
 
   constructor(options: GtcOptions) {
     super()
 
-    this.#qr = new qrReader()
     this.#options = options
-    this.#options.cookiePath = this.#options?.cookiePath || '/tmp/cookies.json'
+    this.#options.cookiePath = this.#options?.cookiePath || `${os.tmpdir()}/cookie.json`
     this.#jar = new CookieJar(new FileCookieStore(this.#options.cookiePath))
 
     this.#http = wrapper(
@@ -54,6 +53,7 @@ class Gtc extends EventEmitter {
       this.#hash = after[1] || null
     }
 
+    this.emit('logged', this.#isLogged)
     return this.#hash
   }
 
@@ -66,23 +66,30 @@ class Gtc extends EventEmitter {
       responseType: 'arraybuffer',
     })
 
-    const qr = this.#qr?.result?.result || null
     const image = await Jimp.read(buffer.data)
-    this.#qr.decode(image.bitmap)
-    const result = this.#qr?.result?.result || null
+    const qr = jsQr(
+      new Uint8ClampedArray(image.bitmap.data),
+      image.bitmap.width,
+      image.bitmap.height
+    )
+    const result = qr?.data || null
 
-    if (qr !== result) {
+    if (this.#qr !== result) {
       this.emit('qrcode', result)
     }
+
+    this.#qr = result
 
     return new Promise((resolve) => {
       const timeout = setTimeout(async () => {
         await this.#getQr()
       }, 100_000)
 
-      this.on('logged', () => {
-        clearTimeout(timeout)
-        resolve()
+      this.on('logged', (logged) => {
+        if (logged) {
+          clearTimeout(timeout)
+          resolve()
+        }
       })
     })
   }
@@ -104,9 +111,9 @@ class Gtc extends EventEmitter {
       },
     })
 
-    if (!!(response.data?.checkResult || false)) {
+    if (response.data?.checkResult || false) {
       this.#isLogged = true
-      this.emit('logged', true)
+      this.emit('logged', this.#isLogged)
 
       return
     }
@@ -122,11 +129,11 @@ class Gtc extends EventEmitter {
       return
     }
 
-    this.on('qrcode', (qr) => {
-      if (this.#options.showQr) {
+    if (this.#options.showQr) {
+      this.on('qrcode', (qr) => {
         qrPrint.generate(qr, { small: true })
-      }
-    })
+      })
+    }
 
     await Promise.all([this.#getQr(), this.#checkLogged()])
   }
@@ -156,7 +163,7 @@ class Gtc extends EventEmitter {
     await page.setCookie(...cookies)
   }
 
-  async find(countryCode: CountryCode, phoneNumber: number | string): Promise<any> {
+  async find(countryCode: CountryCode, phoneNumber: number | string): Promise<GtcResult | null> {
     await this.#checkLogged()
 
     const browser = await puppeteer.use(StealthPlugin()).launch(this.#options.puppeteer)
@@ -168,10 +175,13 @@ class Gtc extends EventEmitter {
 
     await page.evaluate(
       (countryCode, phoneNumber) => {
-        ;(<HTMLInputElement>document.querySelector('[name="countryCode"]')).value = countryCode
-        ;(<HTMLInputElement>document.querySelector('[name="phoneNumber"]')).value =
-          String(phoneNumber)
-        ;(<HTMLElement>document.querySelector('#submitButton')).click()
+        const country: HTMLInputElement = document.querySelector('[name="countryCode"]')!
+        const phone: HTMLInputElement = document.querySelector('[name="phoneNumber"]')!
+        const submit: HTMLElement = document.querySelector('#submitButton')!
+
+        country.value = countryCode
+        phone.value = String(phoneNumber)
+        submit.click()
       },
       countryCode,
       phoneNumber
@@ -181,14 +191,14 @@ class Gtc extends EventEmitter {
       await page.waitForSelector('.box.r-profile-box', { timeout: 0 })
 
       const profile = await page.evaluate(() => {
-        const name = (document.querySelector('.rpbi-info h1')?.innerHTML || '').trim()
-        const provider =
-          (document.querySelector('.rpbi-info em')?.innerHTML?.split('-')?.[0] || '').trim() || null
+        const name = document.querySelector('.rpbi-info h1')?.innerHTML?.trim() || null
+        const detail = document.querySelector('.rpbi-info em')?.innerHTML?.split('-')
+        const provider = detail?.[0]?.trim() || null
+        const country = detail?.[1]?.trim() || null
         const img = /url\('([^']+)'\)/.exec(document.querySelector('.rpbi-img')?.innerHTML || '')
         const picture = img ? img[1] : null
-        const expand = <HTMLElement>document.querySelector('.r-tag-box .rbi-link')
 
-        return { name, provider, picture, tags: expand }
+        return { name, provider, country, picture, tags: null }
       })
 
       await browser.close()
@@ -213,8 +223,8 @@ class Gtc extends EventEmitter {
 
       return { ...profile, tags: response.data.tags.map(({ tag }: { tag: string }) => tag) }
     } catch (error) {
-      console.error(error)
       await browser.close()
+      this.emit('error', error)
 
       return null
     }

@@ -1,4 +1,5 @@
-const { Gtc } = require('../dist')
+// const { Gtc } = require('../dist')
+const { Gtc } = require('gtc-js')
 const qrcode = require('qrcode-terminal')
 
 const main = async () => {
@@ -16,9 +17,21 @@ const main = async () => {
     qrcode.generate(value, { small: true })
   })
 
+  gtc.on('logged', (logged) => {
+    if (logged) {
+      console.log('logged')
+    } else {
+      console.log('scan qr code first')
+    }
+  })
+
+  gtc.on('error', (error) => {
+    console.error(error)
+  })
+
   await gtc.init()
 
-  const tags = await gtc.find('ID', '6283109871234') // just random phone number
+  const tags = await gtc.find('ID', '6283861415641') // just random phone number
   console.log(tags)
 }
 

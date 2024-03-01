@@ -15,6 +15,17 @@ export type GtcOptions = {
   }
 }
 
+export type GtcProfile = {
+  name: string | null
+  provider: string | null
+  country: string | null
+  picture: string | null
+}
+
+export type GtcResult = GtcProfile & {
+  tags: string[] | null
+}
+
 export type CountryCode =
   | 'ID'
   | 'AL'
