@@ -53,7 +53,7 @@
   },
   "dependencies": {
     "axios-cookiejar-support": "^5.0.0",
-    "jimp": "^0.22.10",
+    "jimp": "^0.22.12",
     "jsqr": "^1.4.0",
     "puppeteer": "^22.2.0",
     "puppeteer-extra": "^3.3.6",
