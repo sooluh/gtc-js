@@ -17,9 +17,12 @@ const main = async () => {
     qrcode.generate(value, { small: true })
   })
 
-  gtc.on('logged', (logged) => {
+  gtc.on('logged', async (logged) => {
     if (logged) {
       console.log('logged')
+
+      const tags = await gtc.find('ID', '6283861415641') // just random phone number
+      console.log(tags)
     } else {
       console.log('scan qr code first')
     }
@@ -30,9 +33,6 @@ const main = async () => {
   })
 
   await gtc.init()
-
-  const tags = await gtc.find('ID', '6283861415641') // just random phone number
-  console.log(tags)
 }
 
 main()

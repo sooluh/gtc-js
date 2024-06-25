@@ -41,7 +41,7 @@ class Gtc extends EventEmitter {
   async #getHash() {
     const result = await this.#http.get(this.#base_url).then((res) => res.data)
     const before = result.match(/hash: '([a-fA-F0-9]+)'/)
-    const after = result.match(/<input type="hidden" name="hash" value="([^"]+)"\/>/)
+    const after = result.match(/<input type="hidden" name="hash" value="([a-fA-F0-9]+)"\/>/)
 
     if (before) {
       this.#isLogged = false
@@ -83,7 +83,7 @@ class Gtc extends EventEmitter {
     return new Promise((resolve) => {
       const timeout = setTimeout(async () => {
         await this.#getQr()
-      }, 100_000)
+      }, 20_000)
 
       this.on('logged', (logged) => {
         if (logged) {
