@@ -21,7 +21,7 @@ const main = async () => {
     if (logged) {
       console.log('logged')
 
-      const tags = await gtc.find('ID', '6283861415641') // just random phone number
+      const tags = await gtc.find('ID', '6283812345678') // just random phone number
       console.log(tags)
     } else {
       console.log('scan qr code first')
