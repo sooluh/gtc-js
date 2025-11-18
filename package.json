@@ -48,7 +48,7 @@
     "@types/tough-cookie": "^4.0.5",
     "@types/tough-cookie-file-store": "^2.0.4",
     "prettier": "^3.2.5",
-    "rimraf": "^5.0.5",
+    "rimraf": "^6.1.0",
     "typescript": "^5.3.3"
   },
   "dependencies": {
